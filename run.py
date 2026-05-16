@@ -237,20 +237,26 @@ def main():
         except Exception as e:
             print(e)
 
-        try:
-            windows = WindowsNotifier()
+        if platform.system() == "Windows":
+            try:
 
-            for listing in new_listing_payloads:
-                windows.send_new_listing(
-                    listing
-                )
+                windows = WindowsNotifier()
 
-            for item in price_change_payloads:
-                windows.send_price_change(
-                    item
-                )
-        except Exception as e:
-            print(e)
+                for listing in new_listing_payloads:
+
+                    windows.send_new_listing(
+                        listing
+                    )
+
+                for item in price_change_payloads:
+
+                    windows.send_price_change(
+                        item
+                    )
+
+            except Exception as e:
+
+                print(e)
 
     print(
         "Scraping finalizado"

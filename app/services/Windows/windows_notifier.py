@@ -1,10 +1,18 @@
+import platform
 import tempfile
 
 import requests
 
-from winotify import Notification
-
 from app.utils.price_utils import format_price
+
+
+if platform.system() == "Windows":
+
+    from winotify import Notification
+
+else:
+
+    Notification = None
 
 
 class WindowsNotifier:
@@ -56,6 +64,14 @@ class WindowsNotifier:
         self,
         listing
     ):
+
+        if platform.system() != "Windows":
+
+            print(
+                "Windows notification ignorada."
+            )
+
+            return
 
         image_path = None
 
@@ -116,6 +132,14 @@ class WindowsNotifier:
         self,
         item
     ):
+
+        if platform.system() != "Windows":
+
+            print(
+                "Windows notification ignorada."
+            )
+
+            return
 
         listing = item["listing"]
 
