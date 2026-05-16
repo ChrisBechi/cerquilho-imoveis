@@ -237,6 +237,8 @@ def main():
         except Exception as e:
             print(e)
 
+        if platform.system() == "Windows":
+
         try:
             windows = WindowsNotifier()
 
@@ -249,7 +251,9 @@ def main():
                 windows.send_price_change(
                     item
                 )
+
         except Exception as e:
+
             print(e)
 
     print(
