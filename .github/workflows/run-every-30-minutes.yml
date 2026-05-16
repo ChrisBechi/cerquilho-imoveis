@@ -1,49 +1,50 @@
-name: Real Estate Alert
+name: Run Monitor
 
 on:
   schedule:
     - cron: "*/30 * * * *"
+
   workflow_dispatch:
 
 concurrency:
-  group: real-estate-alert
+  group: listings-monitor
   cancel-in-progress: false
 
 jobs:
-  run-alert:
-    name: Run scraper and notifications
-    runs-on: windows-latest
-    timeout-minutes: 25
+  run:
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
 
     env:
-      PYTHONIOENCODING: utf-8
-      CHECK_INTERVAL_MINUTES: "30"
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
       EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
       EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
       EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
+
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
       GREEN_API_URL: ${{ secrets.GREEN_API_URL }}
       GREEN_API_INSTANCE_ID: ${{ secrets.GREEN_API_INSTANCE_ID }}
       GREEN_API_TOKEN: ${{ secrets.GREEN_API_TOKEN }}
       WHATSAPP_CHAT_ID: ${{ secrets.WHATSAPP_CHAT_ID }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: Run alert job
+      - name: Run project
         run: python run.py
