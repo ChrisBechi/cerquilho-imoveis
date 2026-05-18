@@ -1,40 +1,56 @@
+import os
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
 from app.models.property_listing import PropertyListing
 from app.providers.base_provider import BaseProvider
+
+
+load_dotenv()
 
 
 class ElizandraProvider(BaseProvider):
     NAME = "Elizandra Soares"
 
-    BASE_URL = (
-        "https://oqgfopcdzwbgmfpnbroo"
-        ".supabase.co/rest/v1/properties"
+    BASE_URL = os.getenv(
+        "ELIZANDRA_BASE_URL",
+        "https://oqgfopcdzwbgmfpnbroo.supabase.co/rest/v1/properties"
     )
 
-    API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9xZ2ZvcGNkendiZ21mcG5icm9vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NTE2NjAsImV4cCI6MjA5MDIyNzY2MH0.DLxCWrd7zC7g_5GM047tvQNLf04F5jG0f26RhDKf0Jo"
+    API_KEY = os.getenv(
+        "ELIZANDRA_API_KEY",
+        ""
+    )
 
-    HEADERS = {
-        "apikey": API_KEY,
-        "Authorization": (
-            f"Bearer {API_KEY}"
-        ),
-        "Accept": "application/json",
-        "Origin": (
-            "https://www.elizandrasoares.com.br"
-        ),
-        "Referer": (
-            "https://www.elizandrasoares.com.br/"
-        ),
-        "User-Agent": (
-            "Mozilla/5.0 "
-            "(Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 "
-            "(KHTML, like Gecko) "
-            "Chrome/148.0.0.0 "
-            "Safari/537.36"
-        )
-    }
+    @classmethod
+    def _get_headers(cls):
+        """Dinamicamente constrói headers com credenciais seguras"""
+        if not cls.API_KEY:
+            raise RuntimeError(
+                "ELIZANDRA_API_KEY não configurado. "
+                "Adicione à variável de ambiente."
+            )
+        
+        return {
+            "apikey": cls.API_KEY,
+            "Authorization": f"Bearer {cls.API_KEY}",
+            "Accept": "application/json",
+            "Origin": "https://www.elizandrasoares.com.br",
+            "Referer": "https://www.elizandrasoares.com.br/",
+            "User-Agent": (
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/148.0.0.0 "
+                "Safari/537.36"
+            )
+        }
+
+    @property
+    def headers(self):
+        """Property que retorna headers dinamicamente"""
+        return self._get_headers()
 
     def parse_listing(self, item):
         image_urls = item.get("images", [])
@@ -93,7 +109,7 @@ class ElizandraProvider(BaseProvider):
     def fetch_listings(self):
         response = requests.get(
             self.BASE_URL,
-            headers=self.HEADERS,
+            headers=self.headers,
             params={
                 "select": "*",
                 "order": "created_at.desc",

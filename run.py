@@ -1,3 +1,5 @@
+import platform
+
 from app.providers.dr_adinho_provider import (
     DrAdinhoProvider
 )
@@ -38,12 +40,18 @@ from app.services.listing_payload_builder import (
     ListingPayloadBuilder
 )
 
+from app.services.listing_service import (
+    ListingsService
+)
+
 from app.services.whatsapp.whatsapp_notifier import (
     WhatsAppNotifier
 )
 
 
 def main():
+
+    run_started_at = ListingsService.now_timestamp()
 
     providers = [
         TerrazzoProvider(),
@@ -57,21 +65,58 @@ def main():
     # EXECUTA PROVIDERS
     # ==========================================
 
-    for provider in providers:
+    successful_providers = []
 
+    for provider in providers:
         try:
 
             print(
                 f"Executando provider: {provider.NAME}"
             )
 
-            provider.fetch_listings()
+            listings = provider.fetch_listings()
+            listings_found = len(listings or [])
+
+            if listings_found > 0:
+                successful_providers.append(provider.NAME)
+                ListingsService.mark_provider_execution(
+                    provider.NAME,
+                    "success",
+                    listings_found,
+                )
+            else:
+                print(
+                    f"[PROVIDER EMPTY] provider={provider.NAME} "
+                    "returned zero listings; rented detection disabled for it"
+                )
+                ListingsService.mark_provider_execution(
+                    provider.NAME,
+                    "partial",
+                    listings_found,
+                    "Provider returned zero listings",
+                )
 
         except Exception as error:
 
             print(
                 f"Erro provider {provider.NAME}: {error}"
             )
+
+            ListingsService.mark_provider_execution(
+                provider.NAME,
+                "failed",
+                0,
+                str(error),
+            )
+
+    # ==========================================
+    # RENTED DETECTION
+    # ==========================================
+
+    ListingsService.detect_rented_listings(
+        successful_providers,
+        run_started_at=run_started_at,
+    )
 
     # ==========================================
     # EVENTOS PENDENTES
@@ -102,6 +147,7 @@ def main():
 
     new_listing_payloads = []
     price_change_payloads = []
+    rented_payloads = []
 
     # ==========================================
     # PROCESSA EVENTOS
@@ -170,6 +216,19 @@ def main():
                 )
 
             # ==================================
+            # RENTED
+            # ==================================
+
+            elif (
+                event["type"]
+                == "rented"
+            ):
+
+                rented_payloads.append(
+                    listing
+                )
+
+            # ==================================
             # MARCA COMO NOTIFICADO
             # ==================================
 
@@ -187,17 +246,19 @@ def main():
     # ENVIA EMAIL ÚNICO
     # ==========================================
 
-    if new_listing_payloads or price_change_payloads:
+    if new_listing_payloads or price_change_payloads or rented_payloads:
 
         try:
             email = EmailNotifier()
-            email.send_new_listings(
-                new_listing_payloads
-            )
+            if new_listing_payloads:
+                email.send_new_listings(
+                    new_listing_payloads
+                )
 
-            email.send_price_changes(
-                price_change_payloads
-            )
+            if price_change_payloads:
+                email.send_price_changes(
+                    price_change_payloads
+                )
 
         except Exception as error:
 
@@ -205,6 +266,10 @@ def main():
                 f"Erro email: {error}"
             )
 
+        if rented_payloads:
+            print(
+                f"Eventos rented pendentes para realtime: {len(rented_payloads)}"
+            )
 
         try:
             whatsapp = WhatsAppNotifier()
