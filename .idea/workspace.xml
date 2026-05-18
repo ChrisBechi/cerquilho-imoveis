@@ -6,9 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="7fefedf1-39b4-4aea-8c12-715d483b26fe" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/providers/scudeler_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/providers/scudeler_provider.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/services/Telegram/telegram_notifier.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/services/Telegram/telegram_notifier.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/run.py" beforeDir="false" afterPath="$PROJECT_DIR$/run.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />

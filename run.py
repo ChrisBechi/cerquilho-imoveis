@@ -54,11 +54,11 @@ def main():
     run_started_at = ListingsService.now_timestamp()
 
     providers = [
-        # TerrazzoProvider(),
-        # DrAdinhoProvider(),
-        # RRProvider(),
+        TerrazzoProvider(),
+        DrAdinhoProvider(),
+        RRProvider(),
         ScudelerProvider(),
-        # ElizandraProvider()
+        ElizandraProvider()
     ]
 
     # ==========================================
