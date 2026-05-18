@@ -77,6 +77,9 @@ ADD COLUMN IF NOT EXISTS provider_last_status TEXT;
 
 ALTER TABLE listings 
 ADD COLUMN IF NOT EXISTS provider_last_execution TIMESTAMPTZ;
+
+-- Força o PostgREST/Supabase a recarregar o schema cache
+NOTIFY pgrst, 'reload schema';
 """
 
 # ==================================================

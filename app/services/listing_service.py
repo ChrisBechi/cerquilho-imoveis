@@ -21,6 +21,35 @@ class ListingsService:
     """
 
     @staticmethod
+    def is_missing_schema_column_error(
+        error: Exception,
+    ) -> bool:
+        return (
+            "PGRST204" in str(error)
+            or "schema cache" in str(error)
+            or "Could not find the" in str(error)
+        )
+
+    @staticmethod
+    def execute_with_schema_fallback(
+        query_builder,
+        payload: dict,
+        fallback_payload: dict,
+        context: str,
+    ):
+        try:
+            return query_builder(payload).execute()
+        except Exception as error:
+            if not ListingsService.is_missing_schema_column_error(error):
+                raise
+
+            print(
+                f"[SCHEMA FALLBACK] context={context} error={error} "
+                "retrying without optional columns"
+            )
+            return query_builder(fallback_payload).execute()
+
+    @staticmethod
     def rented_image_url() -> str:
         configured_url = os.getenv("RENTED_IMAGE_URL")
 
@@ -285,8 +314,9 @@ class ListingsService:
         payload: dict,
         current_price: int,
         timestamp: str,
+        include_optional_columns: bool = True,
     ) -> dict:
-        return {
+        listing_payload = {
             "provider": payload["provider"],
             "code": payload.get("code"),
             "title": payload["title"],
@@ -298,13 +328,21 @@ class ListingsService:
             "thumbnail_url": payload["thumbnail_url"],
             "current_price": int(current_price),
             "price_label": payload["price_label"],
-            "last_seen_at": timestamp,
             "updated_at": timestamp,
+        }
+
+        if not include_optional_columns:
+            return listing_payload
+
+        listing_payload.update({
+            "last_seen_at": timestamp,
             "is_active": True,
             "rented_at": None,
             "provider_last_status": "success",
             "provider_last_execution": timestamp,
-        }
+        })
+
+        return listing_payload
 
     @staticmethod
     def upsert_listing(payload: dict):
@@ -375,18 +413,25 @@ class ListingsService:
                 f"old_price={old_price} new_price={new_price}"
             )
 
-            response = (
-                supabase
-                .table("listings")
-                .update(
-                    ListingsService.build_listing_update_payload(
-                        payload,
-                        new_price,
-                        timestamp,
-                    )
-                )
-                .eq("id", listing_id)
-                .execute()
+            response = ListingsService.execute_with_schema_fallback(
+                query_builder=lambda update_payload: (
+                    supabase
+                    .table("listings")
+                    .update(update_payload)
+                    .eq("id", listing_id)
+                ),
+                payload=ListingsService.build_listing_update_payload(
+                    payload,
+                    new_price,
+                    timestamp,
+                ),
+                fallback_payload=ListingsService.build_listing_update_payload(
+                    payload,
+                    new_price,
+                    timestamp,
+                    include_optional_columns=False,
+                ),
+                context="listing_update",
             )
 
             price_changed = old_price != new_price
@@ -450,11 +495,20 @@ class ListingsService:
             timestamp,
         )
 
-        response = (
-            supabase
-            .table("listings")
-            .insert(insert_payload)
-            .execute()
+        response = ListingsService.execute_with_schema_fallback(
+            query_builder=lambda insert_payload: (
+                supabase
+                .table("listings")
+                .insert(insert_payload)
+            ),
+            payload=insert_payload,
+            fallback_payload=ListingsService.build_listing_update_payload(
+                payload,
+                new_price,
+                timestamp,
+                include_optional_columns=False,
+            ),
+            context="listing_insert",
         )
 
         created_listing = response.data[0]
@@ -494,13 +548,22 @@ class ListingsService:
             "provider_last_execution": timestamp,
         }
 
-        (
-            supabase
-            .table("listings")
-            .update(payload)
-            .eq("provider", provider_name)
-            .execute()
-        )
+        try:
+            (
+                supabase
+                .table("listings")
+                .update(payload)
+                .eq("provider", provider_name)
+                .execute()
+            )
+        except Exception as error:
+            if not ListingsService.is_missing_schema_column_error(error):
+                raise
+
+            print(
+                f"[PROVIDER STATUS SKIPPED] provider={provider_name} "
+                f"schema_missing_optional_columns error={error}"
+            )
 
         log_payload = {
             "provider_name": provider_name,
@@ -601,18 +664,29 @@ class ListingsService:
                 f"run_started_at={run_started_at}"
             )
 
-            update_response = (
-                supabase
-                .table("listings")
-                .update({
-                    "is_active": False,
-                    "rented_at": timestamp,
-                    "thumbnail_url": ListingsService.rented_image_url(),
-                    "updated_at": timestamp,
-                })
-                .eq("id", listing_id)
-                .is_("rented_at", None)
-                .execute()
+            rented_payload = {
+                "is_active": False,
+                "rented_at": timestamp,
+                "thumbnail_url": ListingsService.rented_image_url(),
+                "updated_at": timestamp,
+            }
+
+            rented_fallback_payload = {
+                "thumbnail_url": ListingsService.rented_image_url(),
+                "updated_at": timestamp,
+            }
+
+            update_response = ListingsService.execute_with_schema_fallback(
+                query_builder=lambda update_payload: (
+                    supabase
+                    .table("listings")
+                    .update(update_payload)
+                    .eq("id", listing_id)
+                    .is_("rented_at", None)
+                ),
+                payload=rented_payload,
+                fallback_payload=rented_fallback_payload,
+                context="rented_update",
             )
 
             if not update_response.data:
