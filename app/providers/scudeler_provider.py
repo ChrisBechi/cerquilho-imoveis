@@ -1,4 +1,4 @@
-import cloudscraper
+import requests
 
 from app.models.property_listing import (
     PropertyListing
@@ -20,29 +20,7 @@ class ScudelerProvider(
         "/api/imoveis"
     )
 
-    CF_CLEARANCE = (
-        "5_5IFX9mUqJ8dceNQxEp6zOFpsTK0eobwD_j7aGQWx8-1779075708-1.2.1.1-"
-        "BspMZ4S7MdFmCEfjtJ.ifUtfTL1muOny45fM_LOnHhNLjdE4S7NAajv_5QFL."
-        "CepZEm1fI0eML_762lMuFPXF7zCGecboiQVkDjCSyN.lEsqwZr9cauMAgtt5C5PXYx"
-        "GyVyEIMLoN4kid5F0Lt7WBLms1rcAur3SMeqTEogbyFuySMxwH6qBUpRhQ7SwBv5_"
-        "Zu5uhYEqVgZOuLybPOR1i18fC38pPZihNmJJcB5AW5xVrfNZGpCwqtKcOn3qH3t4Fl."
-        "iy_IyoEV9jq_Xh9ctSjO5.0_KkQMy7yNgIfdX0hY4KVV6PVHGZBCyLiukP2PKhGXj"
-        "MzuOA3woHDZemApE2Q"
-    )
-
     HEADERS = {
-        "Accept": (
-            "application/json, text/plain, */*"
-        ),
-        "Accept-Language": (
-            "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
-        ),
-        "Connection": (
-            "keep-alive"
-        ),
-        "Origin": (
-            "https://www.imobiliariascudeler.com.br"
-        ),
         "Referer": (
             "https://www.imobiliariascudeler.com.br/"
             "alugar-imoveis/casas/cerquilho"
@@ -53,81 +31,10 @@ class ScudelerProvider(
             "(Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 "
             "(KHTML, like Gecko) "
-            "Chrome/126.0.0.0 "
+            "Chrome/148.0.0.0 "
             "Safari/537.36"
         )
     }
-
-    REQUEST_TIMEOUT = 60
-
-    def __init__(self):
-        super().__init__()
-
-        self.session = cloudscraper.create_scraper(
-            browser={
-                "browser": "chrome",
-                "platform": "windows",
-                "mobile": False,
-            }
-        )
-
-        self.session.headers.update(
-            self.HEADERS
-        )
-
-        self.session.cookies.set(
-            "cf_clearance",
-            self.CF_CLEARANCE,
-            domain=".imobiliariascudeler.com.br"
-        )
-
-        print(
-            "[SCUDELER CF TEST] cf_clearance manual aplicado "
-            "domain=.imobiliariascudeler.com.br"
-        )
-
-    def fetch_api_page(
-        self,
-        page: int
-    ):
-        params = {
-            "operacao": "aluguel",
-            "tipoId": "10",
-            "cidade": "Cerquilho",
-            "page": page,
-            "ordem": 3,
-            "limite": 40,
-            "idimob": 1,
-        }
-
-        print(
-            f"[SCUDELER CF TEST] request start page={page}"
-        )
-
-        response = self.session.get(
-            self.API_URL,
-            params=params,
-            headers=self.HEADERS,
-            timeout=self.REQUEST_TIMEOUT
-        )
-
-        print(
-            f"[SCUDELER CF TEST] status={response.status_code} "
-            f"reason={response.reason}"
-        )
-
-        print(
-            "[SCUDELER CF TEST] response_partial="
-            f"{response.text[:500]}"
-        )
-
-        if response.status_code == 403:
-            print(
-                "[SCUDELER CF TEST] cf_clearance manual não foi suficiente"
-            )
-
-        response.raise_for_status()
-        return response
 
     def parse_listing(
             self,
@@ -224,11 +131,22 @@ class ScudelerProvider(
                 f"Coletando página {page}"
             )
 
-            response = (
-                self.fetch_api_page(
-                    page
-                )
+            response = requests.get(
+                self.API_URL,
+                params={
+                    "operacao": "aluguel",
+                    "tipoId": "10",
+                    "cidade": "Cerquilho",
+                    "page": page,
+                    "ordem": 3,
+                    "limite": 40,
+                    "idimob": 1,
+                },
+                headers=self.HEADERS,
+                timeout=30
             )
+
+            response.raise_for_status()
 
             payload = response.json()
 
