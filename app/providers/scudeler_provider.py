@@ -1,8 +1,4 @@
-import random
-import time
-
 import cloudscraper
-import requests
 
 from app.models.property_listing import (
     PropertyListing
@@ -19,13 +15,19 @@ class ScudelerProvider(
 
     NAME = "Scudeler"
 
-    HOME_URL = (
-        "https://www.imobiliariascudeler.com.br"
-    )
-
     API_URL = (
         "https://www.imobiliariascudeler.com.br"
         "/api/imoveis"
+    )
+
+    CF_CLEARANCE = (
+        "5_5IFX9mUqJ8dceNQxEp6zOFpsTK0eobwD_j7aGQWx8-1779075708-1.2.1.1-"
+        "BspMZ4S7MdFmCEfjtJ.ifUtfTL1muOny45fM_LOnHhNLjdE4S7NAajv_5QFL."
+        "CepZEm1fI0eML_762lMuFPXF7zCGecboiQVkDjCSyN.lEsqwZr9cauMAgtt5C5PXYx"
+        "GyVyEIMLoN4kid5F0Lt7WBLms1rcAur3SMeqTEogbyFuySMxwH6qBUpRhQ7SwBv5_"
+        "Zu5uhYEqVgZOuLybPOR1i18fC38pPZihNmJJcB5AW5xVrfNZGpCwqtKcOn3qH3t4Fl."
+        "iy_IyoEV9jq_Xh9ctSjO5.0_KkQMy7yNgIfdX0hY4KVV6PVHGZBCyLiukP2PKhGXj"
+        "MzuOA3woHDZemApE2Q"
     )
 
     HEADERS = {
@@ -38,14 +40,8 @@ class ScudelerProvider(
         "Connection": (
             "keep-alive"
         ),
-        "Cache-Control": (
-            "no-cache"
-        ),
         "Origin": (
             "https://www.imobiliariascudeler.com.br"
-        ),
-        "Pragma": (
-            "no-cache"
         ),
         "Referer": (
             "https://www.imobiliariascudeler.com.br/"
@@ -61,17 +57,6 @@ class ScudelerProvider(
             "Safari/537.36"
         )
     }
-
-    RETRY_STATUS_CODES = {
-        403,
-        429
-    }
-
-    RETRY_BACKOFF_SECONDS = [
-        2,
-        4,
-        8
-    ]
 
     REQUEST_TIMEOUT = 60
 
@@ -90,83 +75,21 @@ class ScudelerProvider(
             self.HEADERS
         )
 
-        self.prewarmed = False
-
-    def human_delay(
-        self
-    ):
-        delay = random.uniform(
-            2,
-            5
+        self.session.cookies.set(
+            "cf_clearance",
+            self.CF_CLEARANCE,
+            domain=".imobiliariascudeler.com.br"
         )
 
         print(
-            f"[SCUDELER HUMAN DELAY] sleep={delay:.2f}s"
+            "[SCUDELER CF TEST] cf_clearance manual aplicado "
+            "domain=.imobiliariascudeler.com.br"
         )
-
-        time.sleep(
-            delay
-        )
-
-    def prewarm_session(
-        self
-    ):
-        if self.prewarmed:
-            return
-
-        print(
-            f"[SCUDELER PREWARM START] url={self.HOME_URL}"
-        )
-
-        start = time.monotonic()
-
-        try:
-            response = self.session.get(
-                self.HOME_URL,
-                headers={
-                    **self.HEADERS,
-                    "Accept": (
-                        "text/html,application/xhtml+xml,"
-                        "application/xml;q=0.9,image/avif,image/webp,"
-                        "image/apng,*/*;q=0.8"
-                    ),
-                    "Referer": self.HOME_URL,
-                },
-                timeout=self.REQUEST_TIMEOUT
-            )
-
-            elapsed = time.monotonic() - start
-
-            print(
-                f"[SCUDELER PREWARM END] status={response.status_code} "
-                f"reason={response.reason} elapsed={elapsed:.2f}s "
-                f"cookies={len(self.session.cookies)}"
-            )
-
-            response.raise_for_status()
-            self.prewarmed = True
-            self.human_delay()
-
-        except (
-            requests.Timeout,
-            requests.ConnectionError,
-            requests.HTTPError
-        ) as error:
-            elapsed = time.monotonic() - start
-
-            print(
-                f"[SCUDELER PREWARM FAILED] "
-                f"elapsed={elapsed:.2f}s error={type(error).__name__}: {error}"
-            )
-
-            raise
 
     def fetch_api_page(
         self,
         page: int
     ):
-        self.prewarm_session()
-
         params = {
             "operacao": "aluguel",
             "tipoId": "10",
@@ -177,109 +100,34 @@ class ScudelerProvider(
             "idimob": 1,
         }
 
-        last_error = None
-        last_response = None
-        max_attempts = (
-            len(self.RETRY_BACKOFF_SECONDS)
-            + 1
+        print(
+            f"[SCUDELER CF TEST] request start page={page}"
         )
 
-        for attempt in range(1, max_attempts + 1):
-            self.human_delay()
-
-            print(
-                f"[SCUDELER REQUEST START] page={page} "
-                f"attempt={attempt} timeout={self.REQUEST_TIMEOUT}"
-            )
-
-            start = time.monotonic()
-
-            try:
-                response = self.session.get(
-                    self.API_URL,
-                    params=params,
-                    headers=self.HEADERS,
-                    timeout=self.REQUEST_TIMEOUT
-                )
-                last_response = response
-                elapsed = time.monotonic() - start
-
-                print(
-                    f"[SCUDELER REQUEST END] page={page} "
-                    f"attempt={attempt} status={response.status_code} "
-                    f"reason={response.reason} elapsed={elapsed:.2f}s "
-                    f"cookies={len(self.session.cookies)}"
-                )
-
-                if response.status_code not in self.RETRY_STATUS_CODES:
-                    response.raise_for_status()
-                    return response
-
-                last_error = requests.HTTPError(
-                    f"{response.status_code} response from Scudeler API"
-                )
-
-                if attempt == max_attempts:
-                    break
-
-                delay = self.RETRY_BACKOFF_SECONDS[
-                    attempt - 1
-                ]
-
-                print(
-                    f"[SCUDELER REQUEST RETRY] page={page} "
-                    f"attempt={attempt} status={response.status_code} "
-                    f"reason={response.reason} "
-                    f"sleep={delay}s"
-                )
-
-            except (
-                requests.Timeout,
-                requests.ConnectionError
-            ) as error:
-                last_error = error
-                elapsed = time.monotonic() - start
-
-                if attempt == max_attempts:
-                    break
-
-                delay = self.RETRY_BACKOFF_SECONDS[
-                    attempt - 1
-                ]
-
-                print(
-                    f"[SCUDELER REQUEST RETRY] page={page} "
-                    f"attempt={attempt} error={type(error).__name__} "
-                    f"elapsed={elapsed:.2f}s sleep={delay}s"
-                )
-
-            time.sleep(
-                delay
-            )
+        response = self.session.get(
+            self.API_URL,
+            params=params,
+            headers=self.HEADERS,
+            timeout=self.REQUEST_TIMEOUT
+        )
 
         print(
-            f"[SCUDELER REQUEST FAILED] page={page} "
-            f"error={last_error}"
+            f"[SCUDELER CF TEST] status={response.status_code} "
+            f"reason={response.reason}"
         )
 
-        if (
-            last_response is not None
-            and last_response.status_code in self.RETRY_STATUS_CODES
-        ):
+        print(
+            "[SCUDELER CF TEST] response_partial="
+            f"{response.text[:500]}"
+        )
+
+        if response.status_code == 403:
             print(
-                "[SCUDELER PLAYWRIGHT READY] cloudscraper still blocked; "
-                "future fallback can be enabled here if needed"
+                "[SCUDELER CF TEST] cf_clearance manual não foi suficiente"
             )
 
-        if last_response is not None:
-            last_response.raise_for_status()
-
-        if last_error:
-            raise last_error
-
-        raise RuntimeError(
-            "Scudeler request failed without an explicit error"
-        )
+        response.raise_for_status()
+        return response
 
     def parse_listing(
             self,
