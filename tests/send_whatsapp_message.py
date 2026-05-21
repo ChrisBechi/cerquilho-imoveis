@@ -1,33 +1,37 @@
-import requests
+from app.services.whatsapp.whatsapp_notifier import WhatsAppNotifier
 
-INSTANCE_ID = (
-    ""
-)
+if __name__ == "__main__":
 
-TOKEN = (
-    ""
-)
+    notifier = WhatsAppNotifier()
 
-url = (
-    "https://7107.api.greenapi.com"
-    f"/waInstance{INSTANCE_ID}"
-    "/sendMessage"
-    f"/{TOKEN}"
-)
+    listing = {
 
-payload = {
-    "chatId": (
-        ""
-    ),
-    "message": (
-        "🔥 Teste WhatsApp API"
+        'code': 'L2123',
+
+        "title":
+            "Casa moderna com piscina",
+
+        "price_label":
+            "R$ 850.000",
+
+        "bedrooms":
+            3,
+
+        "bathrooms":
+            2,
+
+        "provider":
+            "Imobiliária XPTO",
+
+        "url":
+            "https://google.com",
+
+        "contact": "11969585712",
+
+        "thumbnail_url":
+            "https://images.unsplash.com/photo-1568605114967-8130f3a36994"
+    }
+
+    notifier.send_new_listing(
+        listing
     )
-}
-
-response = requests.post(
-    url,
-    json=payload
-)
-
-print(response.status_code)
-print(response.text)

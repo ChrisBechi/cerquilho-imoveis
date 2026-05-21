@@ -1,3 +1,4 @@
+import urllib.parse
 import requests
 
 from app.config.settings import (
@@ -6,10 +7,15 @@ from app.config.settings import (
     GREEN_API_TOKEN,
     WHATSAPP_CHAT_ID
 )
+
 from app.utils.price_utils import format_price
 
 
 class WhatsAppNotifier:
+
+    # =========================================
+    # SEND NEW LISTING
+    # =========================================
 
     def send_new_listing(
         self,
@@ -26,8 +32,6 @@ class WhatsAppNotifier:
 🛏️ Quartos: {listing["bedrooms"]} | 🛁 Banheiros: {listing["bathrooms"]}
 
 📡 Imobiliária: {listing["provider"]}
-
-🔗 {listing["url"]}
 """
 
         thumbnail_url = (
@@ -51,9 +55,17 @@ class WhatsAppNotifier:
                 caption
             )
 
+        self.send_interactive_buttons(
+            listing
+        )
+
+    # =========================================
+    # SEND PRICE CHANGE
+    # =========================================
+
     def send_price_change(
-            self,
-            item
+        self,
+        item
     ):
 
         listing = item["listing"]
@@ -93,8 +105,6 @@ class WhatsAppNotifier:
 🛏️ Quartos: {listing["bedrooms"]} | 🛁 Banheiros: {listing["bathrooms"]}
 
 📡 Imobiliária: {listing["provider"]}
-
-🔗 {listing["url"]}
 """
 
         thumbnail_url = (
@@ -117,6 +127,109 @@ class WhatsAppNotifier:
             self.send_message(
                 caption
             )
+
+        self.send_interactive_buttons(
+            listing
+        )
+
+    # =========================================
+    # SEND INTERACTIVE BUTTONS
+    # =========================================
+
+    def send_interactive_buttons(
+            self,
+            listing
+    ):
+
+        message = (
+            f"Olá, fiquei interessado no imóvel com o código "
+            f"'{listing['code']}' "
+            f"e gostaria de agendar uma visita. Pode ser para o primeiro horario que tiver disponivel."
+        )
+
+        encoded_message = urllib.parse.quote(
+            message
+        )
+
+        whatsapp_url = (
+            f"https://wa.me/55{listing['contact']}"
+            f"?text={encoded_message}"
+        )
+
+        url = (
+
+            f"{GREEN_API_URL}"
+
+            f"/waInstance"
+
+            f"{GREEN_API_INSTANCE_ID}"
+
+            "/sendInteractiveButtons"
+
+            f"/{GREEN_API_TOKEN}"
+        )
+
+        payload = {
+
+            "chatId":
+                WHATSAPP_CHAT_ID,
+
+            "body":
+                "👇 Escolha uma opção",
+
+            "footer":
+                " ",
+
+            "buttons": [
+
+                {
+                    "buttonId":
+                        "view_listing",
+
+                    "buttonText":
+                        "🏠 Ver imóvel",
+
+                    "type":
+                        "url",
+
+                    "url":
+                        listing["url"]
+                },
+
+                {
+                    "buttonId":
+                        "schedule_visit",
+
+                    "buttonText":
+                        "📞 Agendar visita",
+
+                    "type":
+                        "url",
+
+                    "url":
+                        whatsapp_url
+                }
+            ]
+        }
+
+        response = requests.post(
+
+            url,
+
+            json=payload,
+
+            timeout=30
+        )
+
+        print(response.status_code)
+
+        print(response.text)
+
+        response.raise_for_status()
+
+        print(
+            "WhatsApp botões enviados."
+        )
 
     # =========================================
     # SEND MESSAGE

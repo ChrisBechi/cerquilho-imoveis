@@ -1,4 +1,5 @@
 import requests
+import re
 
 from app.models.property_listing import (
     PropertyListing
@@ -20,6 +21,11 @@ class ScudelerProvider(
         "/api/imoveis"
     )
 
+    WHATSAPP_API_URL = (
+        "https://www.imobiliariascudeler.com.br"
+        "/api/controle-whatsapp"
+    )
+
     HEADERS = {
         "Referer": (
             "https://www.imobiliariascudeler.com.br/"
@@ -36,9 +42,65 @@ class ScudelerProvider(
         )
     }
 
+    # =========================================
+    # GET PROVIDER PHONE
+    # =========================================
+
+    def get_provider_phone(
+        self
+    ) -> str:
+
+        try:
+
+            response = requests.get(
+
+                self.WHATSAPP_API_URL,
+
+                params={
+                    "pagina": "home",
+                    "idimob": 1,
+                    "rede": 0
+                },
+
+                headers=self.HEADERS,
+
+                timeout=30
+            )
+
+            response.raise_for_status()
+
+            payload = response.json()
+
+            phone = (
+
+                payload
+                .get('ConfWhats', {})
+                .get("Usuario", {})
+                .get("Fone", "")
+            )
+
+            return re.sub(
+                r"\D",
+                "",
+                phone
+            )
+
+        except Exception as error:
+
+            print(
+                f"Erro buscando telefone: {error}"
+            )
+
+            return ""
+
+    # =========================================
+    # PARSE LISTING
+    # =========================================
+
     def parse_listing(
-            self,
-            item
+        self,
+        item,
+        provider_phone: str
     ):
 
         tipo = {}
@@ -60,6 +122,7 @@ class ScudelerProvider(
             )
 
             if url:
+
                 image_urls.append(
                     url
                 )
@@ -67,6 +130,7 @@ class ScudelerProvider(
         thumbnail_url = ""
 
         if image_urls:
+
             thumbnail_url = image_urls[0]
 
         price_label = str(
@@ -78,6 +142,21 @@ class ScudelerProvider(
 
         return PropertyListing(
             provider=self.NAME,
+            area=int(
+                float(
+                    item.get(
+                        "AreaTotal",
+                        "0"
+                    ).replace(
+                        ".",
+                        ""
+                    ).replace(
+                        ",",
+                        "."
+                    )
+                )
+            ),
+            contact=provider_phone,
             code=str(
                 item.get(
                     "Codigo",
@@ -117,6 +196,10 @@ class ScudelerProvider(
             image_urls=image_urls
         )
 
+    # =========================================
+    # FETCH LISTINGS
+    # =========================================
+
     def fetch_listings(self):
 
         listings = []
@@ -125,6 +208,14 @@ class ScudelerProvider(
 
         last_page = 1
 
+        provider_phone = (
+            self.get_provider_phone()
+        )
+
+        print(
+            f"Telefone provider: {provider_phone}"
+        )
+
         while page <= last_page:
 
             print(
@@ -132,7 +223,9 @@ class ScudelerProvider(
             )
 
             response = requests.get(
+
                 self.API_URL,
+
                 params={
                     "operacao": "aluguel",
                     "tipoId": "10",
@@ -142,7 +235,9 @@ class ScudelerProvider(
                     "limite": 40,
                     "idimob": 1,
                 },
+
                 headers=self.HEADERS,
+
                 timeout=30
             )
 
@@ -170,7 +265,8 @@ class ScudelerProvider(
 
                     listing = (
                         self.parse_listing(
-                            item
+                            item,
+                            provider_phone
                         )
                     )
 

@@ -311,13 +311,15 @@ class ListingsService:
 
     @staticmethod
     def build_listing_update_payload(
-        payload: dict,
-        current_price: int,
-        timestamp: str,
-        include_optional_columns: bool = True,
+            payload: dict,
+            current_price: int,
+            timestamp: str,
+            include_optional_columns: bool = True,
     ) -> dict:
+
         listing_payload = {
             "provider": payload["provider"],
+            "contact": payload.get("contact", ""),
             "code": payload.get("code"),
             "title": payload["title"],
             "neighborhood": payload["neighborhood"],

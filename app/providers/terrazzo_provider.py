@@ -15,6 +15,84 @@ class TerrazzoProvider(BaseProvider):
 
     FILTER_URL = ("?type%5B%5D=residential&status%5B%5D=aluguel")
 
+    def extract_provider_phone(
+            self,
+            soup
+    ) -> str:
+        try:
+            phone_link = soup.select_one(
+                'a[href^="tel:"]'
+            )
+
+            if not phone_link:
+                return ""
+
+            href = phone_link.get(
+                "href",
+                ""
+            )
+
+            phone = href.replace(
+                "tel:",
+                ""
+            )
+
+            phone = re.sub(
+                r"\D",
+                "",
+                phone
+            )
+
+            if phone.startswith("55"):
+                phone = phone[2:]
+
+            return phone
+
+        except Exception as error:
+
+            print(
+                f"Erro extraindo telefone: {error}"
+            )
+
+            return ""
+
+    def extract_area(
+            self,
+            element
+    ) -> int:
+
+        try:
+
+            area_element = element.select_one(
+                ".h-area .hz-figure"
+            )
+
+            if not area_element:
+                return 0
+
+            value = area_element.get_text(
+                strip=True
+            )
+
+            digits = "".join(
+                filter(
+                    str.isdigit,
+                    value
+                )
+            )
+
+            return int(
+                digits or 0
+            )
+
+        except Exception as error:
+
+            print(
+                f"Erro extraindo área: {error}"
+            )
+
+            return 0
+
 
     def get_total_pages(self, html: str) -> int:
 
@@ -91,7 +169,7 @@ class TerrazzoProvider(BaseProvider):
 
             return []
 
-    def parse_listing_element(self, element) -> PropertyListing:
+    def parse_listing_element(self, element, contact) -> PropertyListing:
         title_element = element.select_one(
             ".item-title a"
         )
@@ -189,8 +267,12 @@ class TerrazzoProvider(BaseProvider):
             url
         )
 
+        area = self.extract_area(element)
+
         return PropertyListing(
+            area=area,
             provider=self.NAME,
+            contact=contact,
             code=code,
             title=title,
             price_label=price_label,
@@ -224,11 +306,14 @@ class TerrazzoProvider(BaseProvider):
 
         print(f"Itens válidos encontrados: {len(items)}")
 
+        contact = self.extract_provider_phone(
+            soup)
+
         for item in items:
 
             try:
 
-                listing = self.parse_listing_element(item)
+                listing = self.parse_listing_element(item, contact)
 
                 self.persist_listing(
                     listing

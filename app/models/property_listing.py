@@ -4,6 +4,7 @@ from dataclasses import dataclass
 class PropertyListing:
     provider: str
     code: str
+    contact: str
     title: str
     price_label: str
     bedrooms: int

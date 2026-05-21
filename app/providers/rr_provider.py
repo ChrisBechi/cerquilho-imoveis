@@ -13,7 +13,97 @@ class RRProvider(BaseProvider):
         "https://rrimoveiscerquilho.com.br/pesquisar-imoveis"
     )
 
-    FILTER_URL = ("?status=locacao&type%5B%5D=residencial")
+    FILTER_URL = ("?status=locacao&location%5B%5D=cerquilho&type%5B%5D=residencial")
+
+    def extract_area(
+        self,
+        soup
+    ) -> int:
+
+        meta_blocks = soup.select(
+            ".rh_prop_card__meta"
+        )
+
+        for block in meta_blocks:
+
+            title = block.select_one(
+                ".rh_meta_titles"
+            )
+
+            if not title:
+                continue
+
+            label = title.get_text(
+                strip=True
+            ).lower()
+
+            if "área" not in label:
+                continue
+
+            figure = block.select_one(
+                ".figure"
+            )
+
+            if not figure:
+                return 0
+
+            value = figure.get_text(
+                strip=True
+            )
+
+            digits = "".join(
+                filter(
+                    str.isdigit,
+                    value
+                )
+            )
+
+            if digits:
+                return int(digits)
+
+        return 0
+
+    def extract_provider_phone(
+            self,
+            soup
+    ) -> str:
+
+        try:
+
+            whatsapp_link = soup.select_one(
+                'a[href*="phone="]'
+            )
+
+            if not whatsapp_link:
+                return ""
+
+            href = whatsapp_link.get(
+                "href",
+                ""
+            )
+
+            match = re.search(
+                r"phone=\+?(\d+)",
+                href
+            )
+
+            if not match:
+                return ""
+
+            phone = match.group(1)
+
+            if phone.startswith("55"):
+                phone = phone[2:]
+
+            return phone
+
+        except Exception as error:
+
+            print(
+                f"Erro extraindo telefone: {error}"
+            )
+
+            return ""
 
     def fetch_listing_images(
             self,
@@ -63,7 +153,8 @@ class RRProvider(BaseProvider):
 
     def parse_listing_element(
             self,
-            element
+            element,
+            contact
     ):
 
         code = element.get(
@@ -146,10 +237,16 @@ class RRProvider(BaseProvider):
             url
         )
 
+        area = self.extract_area(
+            element
+        )
+
         return PropertyListing(
             provider=self.NAME,
             code=code,
+            area=area,
             title=title,
+            contact=contact,
             price_label=price_label,
             bedrooms=bedrooms,
             bathrooms=bathrooms,
@@ -238,13 +335,16 @@ class RRProvider(BaseProvider):
                 f"Encontrados: {len(elements)}"
             )
 
+            contact = self.extract_provider_phone(soup)
+
             for element in elements:
 
                 try:
 
                     listing = (
                         self.parse_listing_element(
-                            element
+                            element,
+                            contact
                         )
                     )
 

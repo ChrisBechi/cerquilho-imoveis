@@ -63,6 +63,12 @@ class ListingPayloadBuilder:
             "provider":
                 listing["provider"],
 
+            "contact":
+                listing.get(
+                    "contact",
+                    ""
+                ),
+
             "title":
                 listing["title"],
 

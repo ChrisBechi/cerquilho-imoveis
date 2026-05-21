@@ -8,6 +8,7 @@ from app.utils.price_utils import extract_price_value
 
 
 class BaseProvider(ABC):
+
     HEADERS = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -17,11 +18,16 @@ class BaseProvider(ABC):
     }
 
     def __init__(self):
+
         self.session = requests.Session()
 
         self.session.headers.update(
             self.HEADERS
         )
+
+    # =========================================
+    # FETCH PAGE
+    # =========================================
 
     def fetch_page(
         self,
@@ -29,14 +35,21 @@ class BaseProvider(ABC):
     ) -> str:
 
         response = self.session.get(
+
             url,
+
             headers=self.HEADERS,
+
             timeout=30
         )
 
         response.raise_for_status()
 
         return response.text
+
+    # =========================================
+    # NORMALIZE CODE
+    # =========================================
 
     def normalize_code(
         self,
@@ -49,9 +62,14 @@ class BaseProvider(ABC):
         ).strip()
 
         if normalized_code:
+
             return normalized_code
 
         return url
+
+    # =========================================
+    # BUILD PAYLOAD
+    # =========================================
 
     def build_listing_payload(
         self,
@@ -68,8 +86,16 @@ class BaseProvider(ABC):
         )
 
         return {
+
             "provider":
                 self.NAME,
+
+            "contact":
+                getattr(
+                    listing,
+                    "contact",
+                    ""
+                ),
 
             "code":
                 self.normalize_code(
@@ -108,6 +134,10 @@ class BaseProvider(ABC):
                 listing.url,
         }
 
+    # =========================================
+    # PERSIST LISTING
+    # =========================================
+
     def persist_listing(
         self,
         listing
@@ -118,7 +148,9 @@ class BaseProvider(ABC):
         )
 
         print(
-            f"Payload -> provider={payload.get('provider')} "
+            f"Payload -> "
+            f"provider={payload.get('provider')} "
+            f"phone={payload.get('contact')} "
             f"code={payload.get('code')} "
             f"price_label='{payload.get('price_label')}' "
             f"current_price={payload.get('current_price')} "
@@ -130,6 +162,10 @@ class BaseProvider(ABC):
         )
 
         return payload
+
+    # =========================================
+    # ABSTRACT
+    # =========================================
 
     @abstractmethod
     def fetch_listings(self):

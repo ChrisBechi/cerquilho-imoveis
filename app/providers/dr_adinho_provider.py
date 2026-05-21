@@ -36,6 +36,84 @@ class DrAdinhoProvider(
         "&ct_orderby=dateDESC"
     )
 
+    def extract_area(
+            self,
+            element
+    ) -> int:
+
+        try:
+
+            area_element = element.select_one(
+                ".row.lotsize .right"
+            )
+
+            if not area_element:
+                return 0
+
+            value = area_element.get_text(
+                strip=True
+            )
+
+            digits = re.sub(
+                r"\D",
+                "",
+                value
+            )
+
+            return int(
+                digits or 0
+            )
+
+        except Exception as error:
+
+            print(
+                f"Erro extraindo área: {error}"
+            )
+
+            return 0
+
+    def extract_provider_phone(
+            self,
+            soup
+    ) -> str:
+
+        try:
+
+            whatsapp_link = soup.select_one(
+                'a[href*="wa.me/"]'
+            )
+
+            if not whatsapp_link:
+                return ""
+
+            href = whatsapp_link.get(
+                "href",
+                ""
+            )
+
+            match = re.search(
+                r"wa\.me/(\d+)",
+                href
+            )
+
+            if not match:
+                return ""
+
+            phone = match.group(1)
+
+            if phone.startswith("55"):
+                phone = phone[2:]
+
+            return phone
+
+        except Exception as error:
+
+            print(
+                f"Erro extraindo telefone: {error}"
+            )
+
+            return ""
+
     def fetch_listing_images(
             self,
             listing_url: str
@@ -103,6 +181,8 @@ class DrAdinhoProvider(
             f"Total páginas: {total_pages}"
         )
 
+        contact = self.extract_provider_phone(first_soup)
+
         for page in range(
                 1,
                 total_pages + 1
@@ -143,7 +223,8 @@ class DrAdinhoProvider(
 
                     listing = (
                         self.parse_listing_element(
-                            element
+                            element,
+                            contact
                         )
                     )
 
@@ -201,7 +282,8 @@ class DrAdinhoProvider(
 
     def parse_listing_element(
             self,
-            element
+            element,
+            contact
     ) -> PropertyListing:
 
         title_element = element.select_one(
@@ -302,27 +384,20 @@ class DrAdinhoProvider(
             url
         )
 
+        area = self.extract_area(element)
+
         return PropertyListing(
-
             provider=self.NAME,
-
+            contact=contact,
+            area=area,
             code=code,
-
             title=title,
-
             price_label=price_label,
-
             bedrooms=bedrooms,
-
             bathrooms=bathrooms,
-
             property_type=property_type,
-
             published_at="",
-
             url=url,
-
             thumbnail_url=thumbnail_url,
-
             image_urls=image_urls
         )

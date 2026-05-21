@@ -1,5 +1,6 @@
 import os
 import requests
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 from app.models.property_listing import PropertyListing
@@ -21,6 +22,60 @@ class ElizandraProvider(BaseProvider):
         "ELIZANDRA_API_KEY",
         ""
     )
+
+    # =========================================
+    # GET PROVIDER PHONE
+    # =========================================
+
+    def get_provider_phone(
+            self
+    ) -> str:
+
+        try:
+
+            response = requests.get(
+
+                "https://oqgfopcdzwbgmfpnbroo.supabase.co/rest/v1/site_settings",
+
+                headers=self.headers,
+
+                params={
+                    "select": "*"
+                },
+
+                timeout=30
+            )
+
+            response.raise_for_status()
+
+            items = response.json()
+
+            for item in items:
+
+                if item.get("key") == "contactWhatsApp":
+                    phone = item.get(
+                        "value",
+                        ""
+                    )
+
+                    normalized_phone = re.sub(
+                        r"\D",
+                        "",
+                        phone
+                    )
+
+                    return normalized_phone
+
+            return ""
+
+        except Exception as error:
+
+            print(
+                f"Erro buscando telefone provider: {error}"
+            )
+
+            return ""
+
 
     @classmethod
     def _get_headers(cls):
@@ -52,7 +107,11 @@ class ElizandraProvider(BaseProvider):
         """Property que retorna headers dinamicamente"""
         return self._get_headers()
 
-    def parse_listing(self, item):
+    def parse_listing(
+            self,
+            item,
+            provider_phone: str
+    ):
         image_urls = item.get("images", [])
 
         thumbnail_url = ""
@@ -73,6 +132,8 @@ class ElizandraProvider(BaseProvider):
 
         return PropertyListing(
             provider=self.NAME,
+            contact=provider_phone[2:],
+            area=item.get("area", ""),
             code=item.get(
                 "code",
                 ""
@@ -129,13 +190,18 @@ class ElizandraProvider(BaseProvider):
             f"Encontrados: {len(items)}"
         )
 
+        provider_phone = (
+            self.get_provider_phone()
+        )
+
         listings = []
 
         for item in items:
             try:
 
                 listing = self.parse_listing(
-                    item
+                    item,
+                    provider_phone
                 )
 
                 self.persist_listing(
