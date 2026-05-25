@@ -151,6 +151,51 @@ class RRProvider(BaseProvider):
 
             return []
 
+    def extract_price_from_title(
+            self,
+            title: str
+    ) -> str:
+        """
+        Extrai o valor monetário do título.
+        Exemplo: "Imóvel Residencial no Bairro CECAP -Locação R$ 1.500,00"
+        Retorna: "R$ 1.500,00"
+        """
+        match = re.search(
+            r"R\$\s*[\d.,]+",
+            title
+        )
+        return match.group(0) if match else ""
+
+    def extract_price_value(
+            self,
+            price_label: str
+    ) -> float:
+        """
+        Extrai o valor numérico do rótulo de preço.
+        Interpreta formatos brasileiros como 300.000 ou 1.500,00 corretamente.
+        """
+        normalized = re.sub(
+            r"[^\d.,]",
+            "",
+            price_label
+        )
+
+        if not normalized:
+            return 0.0
+
+        if "," in normalized:
+            # Formato brasileiro: 1.500,00 ou 300.000,00
+            normalized = normalized.replace(".", "")
+            normalized = normalized.replace(",", ".")
+        else:
+            # Se só houver pontos, eles podem ser separadores de milhar
+            normalized = normalized.replace(".", "")
+
+        try:
+            return float(normalized)
+        except ValueError:
+            return 0.0
+
     def parse_listing_element(
             self,
             element,
@@ -185,6 +230,18 @@ class RRProvider(BaseProvider):
             if price_element
             else ""
         )
+
+        # Validação: se preço > 100k e há valor no título, substitui pelo valor do título
+        price_value = self.extract_price_value(
+            price_label
+        )
+
+        if price_value > 100000:
+            price_from_title = self.extract_price_from_title(
+                title
+            )
+            if price_from_title:
+                price_label = price_from_title
 
         figures = element.select(
             ".rh_prop_card__meta .figure"
