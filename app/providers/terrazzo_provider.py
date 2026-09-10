@@ -15,6 +15,25 @@ class TerrazzoProvider(BaseProvider):
 
     FILTER_URL = ("?type%5B%5D=residential&status%5B%5D=aluguel")
 
+    @staticmethod
+    def extract_image_url(element) -> str:
+        """Return the real image URL from current and legacy Houzez markup."""
+        if not element:
+            return ""
+
+        image = element if element.name == "img" else element.select_one("img")
+
+        for candidate in (image, element):
+            if not candidate:
+                continue
+
+            for attribute in ("data-src", "data-lazy-src", "src", "href"):
+                value = (candidate.get(attribute) or "").strip()
+                if value and not value.startswith(("data:", "#")):
+                    return value
+
+        return ""
+
     def extract_provider_phone(
             self,
             soup
@@ -151,7 +170,7 @@ class TerrazzoProvider(BaseProvider):
 
             for link in gallery_links:
 
-                src = link.get("data-src")
+                src = self.extract_image_url(link)
 
                 if not src:
                     continue
@@ -258,9 +277,8 @@ class TerrazzoProvider(BaseProvider):
         thumbnail_url = ""
 
         if thumbnail_element:
-            thumbnail_url = (
-                    thumbnail_element.get("data-src")
-                    or ""
+            thumbnail_url = self.extract_image_url(
+                thumbnail_element
             )
 
         image_urls = self.fetch_listing_images(

@@ -183,6 +183,105 @@ def test_new_listing_creates_created_event_once(monkeypatch):
     assert fake.tables["listings"][0]["last_seen_at"] is not None
 
 
+def test_each_run_adds_only_new_listing_images(monkeypatch):
+    fake = install_fake_supabase(monkeypatch)
+    monkeypatch.setattr(
+        ListingsService,
+        "stored_image_url",
+        staticmethod(
+            lambda listing_id, url: (
+                f"https://storage.example/listings/{listing_id}/{url.rsplit('/', 1)[-1]}"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        ListingsService,
+        "store_image",
+        staticmethod(
+            lambda listing_id, url: (
+                f"https://storage.example/listings/{listing_id}/{url.rsplit('/', 1)[-1]}"
+            )
+        ),
+    )
+    payload = sample_payload()
+
+    # Represents an old listing whose gallery failed in a previous run.
+    ListingsService.upsert_listing(payload)
+
+    payload["image_urls"] = [
+        "https://example.com/one.jpg",
+        "https://example.com/two.jpg",
+    ]
+
+
+def test_each_run_removes_images_no_longer_in_provider_gallery(monkeypatch):
+    fake = install_fake_supabase(monkeypatch)
+    monkeypatch.setattr(
+        ListingsService,
+        "stored_image_url",
+        staticmethod(
+            lambda listing_id, url: (
+                f"https://storage.example/listings/{listing_id}/{url.rsplit('/', 1)[-1]}"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        ListingsService,
+        "store_image",
+        staticmethod(
+            lambda listing_id, url: (
+                f"https://storage.example/listings/{listing_id}/{url.rsplit('/', 1)[-1]}"
+            )
+        ),
+    )
+    payload = {
+        **sample_payload(),
+        "image_urls": [
+            "https://example.com/alugada.jpg",
+            "https://example.com/casa.jpg",
+        ],
+    }
+    ListingsService.upsert_listing(payload)
+
+    payload["image_urls"] = ["https://example.com/casa.jpg"]
+    ListingsService.upsert_listing(payload)
+
+    assert [
+        image["image_url"]
+        for image in fake.tables["listing_images"]
+    ] == ["https://storage.example/listings/1/casa.jpg"]
+
+    ListingsService.upsert_listing(payload)
+
+    payload["image_urls"] = [
+        "https://example.com/one.jpg",
+        "https://example.com/two.jpg",
+        "https://example.com/three.jpg",
+        "https://example.com/three.jpg",
+    ]
+    ListingsService.upsert_listing(payload)
+
+    assert [
+        image["image_url"]
+        for image in fake.tables["listing_images"]
+    ] == [
+        "https://storage.example/listings/1/one.jpg",
+        "https://storage.example/listings/1/two.jpg",
+        "https://storage.example/listings/1/three.jpg",
+    ]
+
+
+def test_storage_path_is_stable_for_the_same_source_image():
+    image_url = "https://example.com/photos/home.webp?width=1200"
+
+    first = ListingsService.image_storage_path(42, image_url)
+    second = ListingsService.image_storage_path(42, image_url)
+
+    assert first == second
+    assert first.startswith("listings/42/")
+    assert first.endswith(".webp")
+
+
 def test_price_drop_creates_event_with_history_and_labels(monkeypatch):
     fake = install_fake_supabase(monkeypatch)
 
@@ -196,6 +295,54 @@ def test_price_drop_creates_event_with_history_and_labels(monkeypatch):
     assert event["old_price_label"] == "R$ 2.450"
     assert event["new_price_label"] == "R$ 2.200"
     assert [row["price"] for row in fake.tables["listing_price_history"]] == [220000]
+
+
+def test_existing_listing_refreshes_all_mutable_fields(monkeypatch):
+    fake = install_fake_supabase(monkeypatch)
+    ListingsService.upsert_listing(sample_payload())
+
+    updated = {
+        **sample_payload(),
+        "contact": "15999999999",
+        "title": "Casa atualizada com três dormitórios",
+        "neighborhood": "Nova Cerquilho",
+        "bedrooms": 3,
+        "bathrooms": 2,
+        "area": 95,
+        "url": "https://example.com/imovel/abc123-atualizado",
+        "thumbnail_url": "",
+        "price_label": "R$ 2.450 atualizado",
+    }
+    ListingsService.upsert_listing(updated)
+
+    row = fake.tables["listings"][0]
+    for field in (
+        "contact",
+        "title",
+        "neighborhood",
+        "bedrooms",
+        "bathrooms",
+        "area",
+        "url",
+        "thumbnail_url",
+        "price_label",
+    ):
+        assert row[field] == updated[field]
+
+
+def test_update_fails_loudly_when_rls_changes_no_rows():
+    class EmptyResponse:
+        data = []
+
+    try:
+        ListingsService.ensure_mutation_applied(
+            EmptyResponse(),
+            "listing_update listing_id=1",
+        )
+    except PermissionError as error:
+        assert "service_role" in str(error)
+    else:
+        raise AssertionError("Uma atualização vazia não pode ser tratada como sucesso")
 
 
 def test_price_up_creates_event(monkeypatch):

@@ -1,7 +1,10 @@
 import os
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import urlparse
+
+import requests
 
 from app.config.event_config import (
     BugProtection,
@@ -50,27 +53,98 @@ class ListingsService:
             return query_builder(fallback_payload).execute()
 
     @staticmethod
+    def ensure_mutation_applied(response, context: str):
+        if not getattr(response, "data", None):
+            raise PermissionError(
+                f"Supabase não alterou nenhuma linha em {context}. "
+                "Verifique se SUPABASE_KEY contém a chave service_role "
+                "e se o registro está acessível pelas políticas RLS."
+            )
+
+        return response
+
+    @staticmethod
     def rented_image_url() -> str:
-        configured_url = os.getenv("RENTED_IMAGE_URL")
-
-        if configured_url:
-            return configured_url
-
-        svg = (
-            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 800'>"
-            "<rect width='1200' height='800' fill='#1f2937'/>"
-            "<rect x='80' y='80' width='1040' height='640' rx='28' fill='#f8fafc'/>"
-            "<rect x='80' y='322' width='1040' height='156' fill='#dc2626'/>"
-            "<text x='600' y='425' text-anchor='middle' "
-            "font-family='Arial,sans-serif' font-size='118' "
-            "font-weight='700' fill='white'>ALUGADO</text>"
-            "<text x='600' y='560' text-anchor='middle' "
-            "font-family='Arial,sans-serif' font-size='44' "
-            "font-weight='500' fill='#374151'>Imovel indisponivel</text>"
-            "</svg>"
+        return (
+            os.getenv("RENTED_IMAGE_URL")
+            or "https://i.imgur.com/qK0Bms2.png?w=800&q=80"
         )
 
-        return f"data:image/svg+xml,{quote(svg, safe='')}"
+    @staticmethod
+    def image_bucket_name() -> str:
+        return os.getenv("SUPABASE_IMAGE_BUCKET", "cerq-imoveis")
+
+    @staticmethod
+    def image_storage_path(listing_id: int, image_url: str) -> str:
+        digest = hashlib.sha256(image_url.encode("utf-8")).hexdigest()[:24]
+        extension = os.path.splitext(urlparse(image_url).path)[1].lower()
+
+        if extension not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}:
+            extension = ".jpg"
+
+        return f"listings/{listing_id}/{digest}{extension}"
+
+    @staticmethod
+    def stored_image_url(listing_id: int, image_url: str) -> str:
+        bucket_name = ListingsService.image_bucket_name()
+        public_prefix = f"/storage/v1/object/public/{bucket_name}/"
+
+        if public_prefix in image_url:
+            return image_url
+
+        storage_path = ListingsService.image_storage_path(
+            listing_id,
+            image_url,
+        )
+        bucket = supabase.storage.from_(bucket_name)
+        return bucket.get_public_url(storage_path)
+
+    @staticmethod
+    def store_image(listing_id: int, image_url: str) -> str:
+        bucket_name = ListingsService.image_bucket_name()
+        public_prefix = f"/storage/v1/object/public/{bucket_name}/"
+
+        if public_prefix in image_url:
+            return image_url
+
+        storage_path = ListingsService.image_storage_path(
+            listing_id,
+            image_url,
+        )
+        public_url = ListingsService.stored_image_url(listing_id, image_url)
+        bucket = supabase.storage.from_(bucket_name)
+
+        response = requests.get(
+            image_url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 Chrome/136.0 Safari/537.36"
+                )
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        content_type = response.headers.get("Content-Type", "image/jpeg").split(";")[0]
+        if not content_type.startswith("image/"):
+            raise ValueError(f"URL não retornou uma imagem: {image_url}")
+
+        max_image_bytes = 15 * 1024 * 1024
+        if len(response.content) > max_image_bytes:
+            raise ValueError(f"Imagem excede 15 MB: {image_url}")
+
+        bucket.upload(
+            path=storage_path,
+            file=response.content,
+            file_options={
+                "content-type": content_type,
+                "cache-control": "31536000",
+                "upsert": "true",
+            },
+        )
+
+        return public_url
 
     @staticmethod
     def now_timestamp() -> str:
@@ -209,41 +283,134 @@ class ListingsService:
     def sync_images(
         listing_id: int,
         image_urls: list[str],
-    ):
+    ) -> int:
         if not image_urls:
-            return
+            print(
+                f"[IMAGE SYNC] listing_id={listing_id} "
+                "found=0 existing=0 added=0"
+            )
+            return 0
 
-        existing = (
-            supabase
-            .table("listing_images")
-            .select("image_url")
-            .eq("listing_id", listing_id)
-            .execute()
-        )
+        source_urls = list(dict.fromkeys(
+            image_url.strip()
+            for image_url in image_urls
+            if image_url and image_url.strip()
+        ))[:BugProtection.MAX_IMAGES]
 
-        existing_urls = {
-            item["image_url"]
-            for item in existing.data
-        }
-
-        new_images = [
-            {
-                "listing_id": listing_id,
-                "image_url": image_url,
-            }
-            for image_url in image_urls[:BugProtection.MAX_IMAGES]
-            if image_url not in existing_urls
-        ]
-
-        if new_images:
-            (
+        try:
+            existing = (
                 supabase
                 .table("listing_images")
-                .insert(new_images)
+                .select("image_url")
+                .eq("listing_id", listing_id)
                 .execute()
             )
 
-            print(f"{len(new_images)} imagens adicionadas")
+            existing_urls = {
+                item["image_url"]
+                for item in existing.data
+            }
+
+            stored_urls = []
+
+            for source_url in source_urls:
+                try:
+                    expected_url = ListingsService.stored_image_url(
+                        listing_id,
+                        source_url,
+                    )
+                    if expected_url in existing_urls:
+                        stored_urls.append(expected_url)
+                        continue
+
+                    stored_url = ListingsService.store_image(
+                        listing_id,
+                        source_url,
+                    )
+                    if stored_url not in stored_urls:
+                        stored_urls.append(stored_url)
+                except Exception as error:
+                    print(
+                        f"[IMAGE UPLOAD FAILED] listing_id={listing_id} "
+                        f"url={source_url} error={error}"
+                    )
+
+            new_images = [
+                {"listing_id": listing_id, "image_url": stored_url}
+                for stored_url in stored_urls
+                if stored_url not in existing_urls
+            ]
+
+            # The provider gallery is authoritative. Keeping URLs that have
+            # disappeared from it can leave an old "alugado" banner attached
+            # to a listing that became active again.
+            obsolete_urls = (
+                existing_urls - set(stored_urls)
+                if len(stored_urls) == len(source_urls)
+                else set()
+            )
+
+            for obsolete_url in obsolete_urls:
+                (
+                    supabase
+                    .table("listing_images")
+                    .delete()
+                    .eq("listing_id", listing_id)
+                    .eq("image_url", obsolete_url)
+                    .execute()
+                )
+
+            if new_images:
+                (
+                    supabase
+                    .table("listing_images")
+                    .insert(new_images)
+                    .execute()
+                )
+
+            print(
+                f"[IMAGE SYNC] listing_id={listing_id} "
+                f"found={len(source_urls)} stored={len(stored_urls)} "
+                f"existing={len(existing_urls)} "
+                f"added={len(new_images)} removed={len(obsolete_urls)}"
+            )
+
+            return len(new_images)
+
+        except Exception as error:
+            # Image synchronization is retried the next time the listing is seen.
+            # It must not make a valid listing disappear from the provider run.
+            print(
+                f"[IMAGE SYNC FAILED] listing_id={listing_id} "
+                f"found={len(source_urls)} error={error}"
+            )
+
+            return 0
+
+    @staticmethod
+    def sync_thumbnail(listing_id: int, thumbnail_url: str) -> str:
+        if not thumbnail_url:
+            return ""
+
+        try:
+            stored_url = ListingsService.store_image(
+                listing_id,
+                thumbnail_url,
+            )
+            (
+                supabase
+                .table("listings")
+                .update({"thumbnail_url": stored_url})
+                .eq("id", listing_id)
+                .execute()
+            )
+            return stored_url
+        except Exception as error:
+            print(
+                f"[THUMBNAIL UPLOAD FAILED] listing_id={listing_id} "
+                f"url={thumbnail_url} error={error}"
+            )
+            return ""
 
     @staticmethod
     def replace_with_rented_image(
@@ -435,6 +602,33 @@ class ListingsService:
                 ),
                 context="listing_update",
             )
+            ListingsService.ensure_mutation_applied(
+                response,
+                f"listing_update listing_id={listing_id}",
+            )
+
+            changed_fields = [
+                field
+                for field in (
+                    "contact",
+                    "title",
+                    "neighborhood",
+                    "bedrooms",
+                    "bathrooms",
+                    "area",
+                    "url",
+                    "thumbnail_url",
+                    "price_label",
+                )
+                if listing.get(field) != payload.get(field)
+            ]
+            if old_price != new_price:
+                changed_fields.append("current_price")
+
+            print(
+                f"[LISTING FIELDS UPDATED] listing_id={listing_id} "
+                f"fields={','.join(changed_fields) or 'timestamps'}"
+            )
 
             price_changed = old_price != new_price
             valid_new_price = ListingsService.is_valid_price(new_price)
@@ -485,6 +679,10 @@ class ListingsService:
                 listing_id,
                 payload.get("image_urls", []),
             )
+            ListingsService.sync_thumbnail(
+                listing_id,
+                payload.get("thumbnail_url", ""),
+            )
 
             print("LISTING UPDATED")
             return response.data
@@ -512,6 +710,10 @@ class ListingsService:
             ),
             context="listing_insert",
         )
+        ListingsService.ensure_mutation_applied(
+            response,
+            "listing_insert",
+        )
 
         created_listing = response.data[0]
         listing_id = created_listing["id"]
@@ -526,6 +728,10 @@ class ListingsService:
         ListingsService.sync_images(
             listing_id,
             payload.get("image_urls", []),
+        )
+        ListingsService.sync_thumbnail(
+            listing_id,
+            payload.get("thumbnail_url", ""),
         )
 
         print(f"LISTING CREATED id={listing_id}")
