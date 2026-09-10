@@ -527,6 +527,13 @@ class ListingsService:
             )
             return []
 
+        if not ListingsService.is_valid_price(incoming_price):
+            print(
+                f"[LISTING SKIPPED] invalid price provider={payload.get('provider')} "
+                f"code={payload.get('code')} current_price={incoming_price}"
+            )
+            return []
+
         print(
             f"[LISTING SEEN] provider={payload.get('provider')} "
             f"code={payload.get('code')} current_price={incoming_price} "
@@ -736,6 +743,46 @@ class ListingsService:
 
         print(f"LISTING CREATED id={listing_id}")
         return response.data
+
+    @staticmethod
+    def remove_invalid_price_listings() -> int:
+        invalid = (
+            supabase
+            .table("listings")
+            .select("id, provider, code, current_price")
+            .gt("current_price", BugProtection.MAX_PRICE)
+            .execute()
+        )
+
+        for listing in invalid.data or []:
+            listing_id = listing["id"]
+            for table_name in (
+                "listing_images",
+                "listing_events",
+                "listing_price_history",
+            ):
+                (
+                    supabase
+                    .table(table_name)
+                    .delete()
+                    .eq("listing_id", listing_id)
+                    .execute()
+                )
+
+            (
+                supabase
+                .table("listings")
+                .delete()
+                .eq("id", listing_id)
+                .execute()
+            )
+            print(
+                f"[INVALID LISTING REMOVED] listing_id={listing_id} "
+                f"provider={listing.get('provider')} code={listing.get('code')} "
+                f"current_price={listing.get('current_price')}"
+            )
+
+        return len(invalid.data or [])
 
     @staticmethod
     def mark_provider_execution(

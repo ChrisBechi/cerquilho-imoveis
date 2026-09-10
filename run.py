@@ -52,6 +52,7 @@ from app.services.whatsapp.whatsapp_notifier import (
 def main():
 
     run_started_at = ListingsService.now_timestamp()
+    ListingsService.remove_invalid_price_listings()
 
     providers = [
         TerrazzoProvider(),

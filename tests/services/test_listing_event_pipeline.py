@@ -85,6 +85,10 @@ class FakeQuery:
         self.filters.append(lambda row: row.get(field) is not None and row.get(field) < value)
         return self
 
+    def gt(self, field, value):
+        self.filters.append(lambda row: row.get(field) is not None and row.get(field) > value)
+        return self
+
     def in_(self, field, values):
         allowed = set(values)
         self.filters.append(lambda row: row.get(field) in allowed)
@@ -365,6 +369,40 @@ def test_invalid_temporary_price_does_not_create_false_drop(monkeypatch):
 
     assert event_types(fake) == ["created"]
     assert fake.tables["listings"][0]["current_price"] == 245000
+    assert fake.tables["listing_price_history"] == []
+
+
+def test_new_listing_above_price_limit_is_not_created(monkeypatch):
+    fake = install_fake_supabase(monkeypatch)
+
+    result = ListingsService.upsert_listing(
+        sample_payload(price=1_000_001, price_label="R$ 10.000,01")
+    )
+
+    assert result == []
+    assert fake.tables["listings"] == []
+
+
+def test_invalid_price_cleanup_removes_listing_and_relations(monkeypatch):
+    fake = install_fake_supabase(monkeypatch)
+    listing = fake.insert_row(
+        "listings",
+        {
+            "provider": "Doutor Adinho",
+            "code": "INVALID",
+            "current_price": 98_700_000,
+        },
+    )
+    fake.insert_row("listing_images", {"listing_id": listing["id"], "image_url": "x"})
+    fake.insert_row("listing_events", {"listing_id": listing["id"], "type": "created"})
+    fake.insert_row("listing_price_history", {"listing_id": listing["id"], "price": 98_700_000})
+
+    removed = ListingsService.remove_invalid_price_listings()
+
+    assert removed == 1
+    assert fake.tables["listings"] == []
+    assert fake.tables["listing_images"] == []
+    assert fake.tables["listing_events"] == []
     assert fake.tables["listing_price_history"] == []
 
 

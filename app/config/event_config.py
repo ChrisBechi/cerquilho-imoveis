@@ -51,7 +51,7 @@ class BugProtection:
     MIN_PRICE: Final[int] = 1000  # R$ 10
     
     # Preço máximo (evita dados muito grandes)
-    MAX_PRICE: Final[int] = 100_000_000  # R$ 1.000.000
+    MAX_PRICE: Final[int] = 1_000_000  # R$ 10.000
     
     # Comprimento mínimo de título
     MIN_TITLE_LENGTH: Final[int] = 5
