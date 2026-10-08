@@ -1,5 +1,6 @@
 import requests
 import re
+from urllib.parse import quote
 
 from app.models.property_listing import (
     PropertyListing
@@ -20,6 +21,56 @@ class ScudelerProvider(
         "https://www.imobiliariascudeler.com.br"
         "/api/imoveis"
     )
+
+    DETAIL_API_URL = "https://www.imobiliariascudeler.com.br/api/imovel"
+
+    @staticmethod
+    def extract_image_urls(photos) -> list[str]:
+        if isinstance(photos, dict):
+            groups = [photos.get("Apresentacao", [])]
+            groups.extend(value for key, value in photos.items()
+                          if key != "Apresentacao" and isinstance(value, list))
+        elif isinstance(photos, list):
+            groups = [photos]
+        else:
+            return []
+
+        urls = []
+        for group in groups:
+            if not isinstance(group, list):
+                continue
+            for photo in group:
+                if not isinstance(photo, dict):
+                    continue
+                url = (photo.get("Foto_Media") or photo.get("Foto_Grande")
+                       or photo.get("Foto_Pequena"))
+                if isinstance(url, str) and url.strip() and url.strip() not in urls:
+                    urls.append(url.strip())
+        return urls
+
+    def fetch_listing_images(self, listing_id, company_id=1) -> list[str] | None:
+        try:
+            response = self.session.get(
+                f"{self.DETAIL_API_URL}/{quote(str(listing_id), safe='')}",
+                params={"rede": 0, "idimob": company_id},
+                headers=self.HEADERS,
+                timeout=30,
+            )
+            response.raise_for_status()
+            detail = response.json().get("data")
+            if not isinstance(detail, dict) or str(detail.get("ID")) != str(listing_id):
+                raise ValueError("Unexpected property detail response")
+
+            images = self.extract_image_urls(detail.get("Fotos"))
+            if not images:
+                raise ValueError("Property detail returned an empty gallery")
+
+            print(f"[SCUDELER GALLERY] id={listing_id} images={len(images)}")
+            return images
+        except (requests.RequestException, ValueError, TypeError, AttributeError) as error:
+            print(f"[SCUDELER GALLERY FAILED] id={listing_id} error={error}; "
+                  "preserving saved gallery for the next run")
+            return None
 
     WHATSAPP_API_URL = (
         "https://www.imobiliariascudeler.com.br"
@@ -108,24 +159,12 @@ class ScudelerProvider(
         if item.get("Tipo"):
             tipo = item["Tipo"][0]
 
-        image_urls = []
-
-        fotos = item.get(
-            "Fotos",
-            []
+        preview_urls = self.extract_image_urls(item.get("Fotos", []))
+        gallery_urls = self.fetch_listing_images(
+            item.get("ID") or item.get("Codigo"),
+            item.get("Idimob") or 1,
         )
-
-        for foto in fotos:
-
-            url = foto.get(
-                "Foto_Media"
-            )
-
-            if url:
-
-                image_urls.append(
-                    url
-                )
+        image_urls = gallery_urls if gallery_urls is not None else preview_urls
 
         thumbnail_url = ""
 
@@ -193,7 +232,8 @@ class ScudelerProvider(
                 ""
             ),
             thumbnail_url=thumbnail_url,
-            image_urls=image_urls
+            image_urls=image_urls,
+            image_urls_complete=gallery_urls is not None,
         )
 
     # =========================================

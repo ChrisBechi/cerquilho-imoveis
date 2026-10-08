@@ -80,6 +80,10 @@ class BaseProvider(ABC):
             listing.image_urls
             or []
         )
+        if not getattr(listing, "image_urls_complete", True):
+            # An incomplete preview must not replace an existing full gallery.
+            # An empty sync preserves it and retries on the next collection.
+            image_urls = []
 
         current_price = extract_price_value(
             listing.price_label

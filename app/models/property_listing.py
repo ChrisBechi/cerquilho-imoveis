@@ -17,3 +17,4 @@ class PropertyListing:
     parking_spots: int = 0
     area: int = 0
     neighborhood: str = ""
+    image_urls_complete: bool = True
