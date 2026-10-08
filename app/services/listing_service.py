@@ -413,32 +413,38 @@ class ListingsService:
             return ""
 
     @staticmethod
-    def replace_with_rented_image(
+    def prepend_rented_image(
         listing_id: int,
     ):
         image_url = ListingsService.rented_image_url()
 
-        (
+        existing = (
             supabase
             .table("listing_images")
-            .delete()
+            .select("image_url")
             .eq("listing_id", listing_id)
             .execute()
         )
 
-        (
-            supabase
-            .table("listing_images")
-            .insert({
-                "listing_id": listing_id,
-                "image_url": image_url,
-            })
-            .execute()
-        )
+        existing_urls = {
+            item.get("image_url")
+            for item in (existing.data or [])
+        }
+
+        if image_url not in existing_urls:
+            (
+                supabase
+                .table("listing_images")
+                .insert({
+                    "listing_id": listing_id,
+                    "image_url": image_url,
+                })
+                .execute()
+            )
 
         print(
             f"[RENTED IMAGE UPDATED] listing_id={listing_id} "
-            "gallery_replaced=true"
+            f"gallery_preserved={len(existing_urls)}"
         )
 
     @staticmethod
@@ -951,7 +957,7 @@ class ListingsService:
                 )
                 continue
 
-            ListingsService.replace_with_rented_image(
+            ListingsService.prepend_rented_image(
                 listing_id
             )
 

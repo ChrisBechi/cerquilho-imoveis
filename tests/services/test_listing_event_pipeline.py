@@ -415,6 +415,14 @@ def test_listing_missing_this_run_is_marked_rented_immediately(monkeypatch):
             "https://example.com/old-2.jpg",
         ],
     })
+    fake.insert_row(
+        "listing_images",
+        {"listing_id": 1, "image_url": "https://example.com/old-1.jpg"},
+    )
+    fake.insert_row(
+        "listing_images",
+        {"listing_id": 1, "image_url": "https://example.com/old-2.jpg"},
+    )
     fake.tables["listings"][0]["last_seen_at"] = (
         datetime.now(timezone.utc) - timedelta(hours=23)
     ).replace(microsecond=0).isoformat()
@@ -429,9 +437,15 @@ def test_listing_missing_this_run_is_marked_rented_immediately(monkeypatch):
     assert fake.tables["listings"][0]["is_active"] is False
     assert fake.tables["listings"][0]["rented_at"] is not None
     assert fake.tables["listings"][0]["thumbnail_url"] == ListingsService.rented_image_url()
-    assert len(fake.tables["listing_images"]) == 1
-    assert fake.tables["listing_images"][0]["listing_id"] == 1
-    assert fake.tables["listing_images"][0]["image_url"] == ListingsService.rented_image_url()
+    assert len(fake.tables["listing_images"]) == 3
+    assert {
+        image["image_url"]
+        for image in fake.tables["listing_images"]
+    } == {
+        "https://example.com/old-1.jpg",
+        "https://example.com/old-2.jpg",
+        ListingsService.rented_image_url(),
+    }
     assert "rented" in event_types(fake)
 
 
